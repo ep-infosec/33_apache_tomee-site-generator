@@ -1,0 +1,294 @@
+= Releasing TomEE
+:jbake-type: page
+:jbake-status: published
+
+This document aims to guide a release manager through the general release process.
+
+== Requirements
+
+=== Operating System
+
+You will need either a *Linux* or *Mac*. If you are on a *Windows* machine, you should set up a virtual machine (with at least a 50GB drive).
+Keep in mind, that you have to upload > 1GB of data, that means, ensure to have a stable and fast connection to the internet. Upload bandwidth is key.
+
+=== Java & Maven
+
+Ensure to build with the correct Java and Maven version.
+
+* TomEE 8.x - Java 8 + Maven 3.3.9
+* TomEE 9.x - Java 11 + Maven 3.8.x
+
+Note: Currently, newer Maven version will fail to deploy `*.tar.gz` files correctly. This is tracked in https://issues.apache.org/jira/browse/TOMEE-3903[TOMEE-3903].
+
+Ensure to setup `JAVA_HOME` and `PATH` correctly, e.g.:
+
+[source,bash]
+----
+export JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk-amd64/
+export PATH=$JAVA_HOME/bin:$PATH
+----
+
+=== Code Signing Setup
+
+If this is your first release then you will have to ensure that you have a *code signing key* prepared on the machine from which you perform the release.
+The process obtain a valid key is quite intense. You can find information here:
+
+* https://www.apache.org/dev/release-signing.html
+* https://maven.apache.org/developers/release/pmc-gpg-keys.html
+
+However, the basic steps are:
+
+* Create a key using *gpg --gen-key*, using a keysize of *4096* and answering the questions that command issues.
+* During the process you will have to generate random entropy, this is best achieved in another console and issuing the command *find / > /dev/null* and waiting a minute.
+* List the keys using *gpg --list-keys* and take note of the name
+
+Once you have your key then you will need to append it to the key file here:
+
+* https://downloads.apache.org/tomee/KEYS
+
+Note: Adding new keys via SVN to the **KEYS** files can only be conducted by a PMC member.
+
+That is best done as the file itself explains, once you open and view it in a UTF-8 safe text editor. The basic steps are also here, please read both before you proceed:
+
+* Save the KEYS file on your local machine and import it using *gpg --import KEYS*
+* Then create the new KEYS file using **(gpg --list-sigs +++<your name="">+++&& gpg --armor --export +++<your name="">+++) >> KEYS**+++</your>++++++</your>+++
+* Check that the new KEYS file contains your key.
+* Checkout https://dist.apache.org/repos/dist/release/tomee/ via SVN
+* Make a backup of the remote KEYS file just in case
+* Overwrite the old *KEYS* file with your new one that now also contains your key.
+* Go to http://pgp.mit.edu/ and add your ascii armoured key
+* Take note of your key fingerprint using **gpg --fingerprint +++<your name="">+++**+++</your>+++
+* Go to https://id.apache.org, log in and fill OpenPGP Public Key Primary Fingerprint with the value of your fingerprint.
+* Create a **backup** of your private and public key and store it in a **save** location.
+
+
+=== Prepare Maven Authentication
+
+Ensure your maven `.m2/settings.xml` are setup correctly and be aware that the tools currently require a clear text password:
+
+....
+ <servers>
+     <server>
+      <id>apache.snapshots.https</id>
+      <username>ASF_LDAP</username>
+      <password>ASF_PASSWORD_IN_CLEAR</password>
+    </server>
+    <server>
+      <id>apache.releases.https</id>
+      <username>ASF_LDAP</username>
+      <password>ASF_PASSWORD_IN_CLEAR</password>
+    </server>
+    <server>
+      <id>apache.dist.https</id>
+      <username>ASF_LDAP</username>
+      <password>ASF_PASSWORD_IN_CLEAR</password>
+    </server>
+ </servers>
+<profiles>
+        <profile>
+            <id>my_profile</id>
+            <properties>
+                <gpg.keyname>INSERT_YOUR_GPG_FINGERPRINT</gpg.keyname>
+            </properties>
+            <repositories>
+                <repository>
+                    <id>apache.dist.https</id>
+                    <url>https://dist.apache.org/repos/dist</url>
+                </repository>
+            </repositories>
+        </profile>
+</profiles>
+....
+
+
+=== Check SVN Authentication
+
+Pre-authenticate SVN repositories to ensure your credentials are cached before using any tools.
+
+ svn mkdir --username [ASF_LDAP] --password [ASF_PASSWORD] -m "Create test dir" https://dist.apache.org/repos/dist/dev/tomee/testdir3
+ svn delete --username [ASF_LDAP] --password [ASF_PASSWORD] -m "Delete test dir" https://dist.apache.org/repos/dist/dev/tomee/testdir3
+
+== Preparation of the release
+
+=== Check Licenses & Style
+
+Run
+
+[source,bash]
+----
+mvn help:system -U --show-version --fail-at-end clean install -DfailIfNoTests=false -DskipTests -Pstyle,rat
+----
+
+to ensure all licences are in place.
+
+* Review the report.txt and update/add missing headers until clean.
+* Search for *Unapproved licenses:* at the beginning of the report for a list.
+
+Note: This step is always run by the GitHub Actions workflow **and** by the Jenkins build server, so you can check the CI status:
+
+* https://ci-builds.apache.org/job/Tomee/job/master-sanity-checks/[TomEE Master Sanity Checks]
+* https://ci-builds.apache.org/job/Tomee/job/tomee-8.x-sanity-checks/[TomEE 8.x Sanity Checks]
+
+=== Check the full builds
+
+Before you can continue, you should check, that the **full** build on Jenkins CI passes *all* tests.
+
+* https://ci-builds.apache.org/job/Tomee/job/master-build-full/[TomEE Master]
+* https://ci-builds.apache.org/job/Tomee/job/tomee-8.x-build-full/[TomEE 8.x]
+
+=== Run the TCK (optional)
+
+If in doubt, it makes sense to run the TCK on dedicated infrastructure.
+Instruction can be found in the https://github.com/apache/tomee-tck[TCK harness repository].
+
+=== Build the Release Tools
+
+Checkout the release tools using git from https://github.com/apache/tomee-release-tools
+
+* **Read** the `README.adoc` and follow the instructions for building required 3rd party libraries, i.e., checkout https://svn.apache.org/repos/asf/creadur/tentacles/trunk[Tentacles] and build them.
+
+* Build the release tools by running `mvn clean install`
+
+* The build will  create an executable, which can be run via `./target/release`.
+
+* Understand that the release tools are not polished, and you currently may have to edit source and re-compile.
+
+
+== Begin the Release process
+
+=== Build the project
+
+Double check that the tests and (optionally) the TCK passes. If so, go ahead with
+
+[source,bash]
+----
+mvn clean install release:prepare -DskipTests=true -Pmy_profile
+----
+
+The `release:prepare` will ask some interactive questions, which need to be answered. If you are unsure, you can specify `-DdryRun=true` to test it beforehand.
+
+This command will create a tag and update the POM files accordingly to the release and the next development iteration.
+
+During this process a `release.properties` is created in the project root, which you should copy to a save location in case something goes wrong.
+
+=== Deploy to Nexus Staging Area
+
+If everything was successful, you can then run
+
+[source,bash]
+----
+mvn release:perform -DskipTests=true -Pmy_profile
+----
+
+This will take some time and upload a bunch of data to https://repository.apache.org/
+
+After the build succeeds:
+
+* Login into https://repository.apache.org/
+
+* Go to **Staging Repositories**
+
+* Find the auto-generated staging repository named **orgapachetomee-xxxx**
+
+* Double-check the content of the repository. For example:
+
+** Check if `*.tar.gz` distribution artifacts are correctly uploaded.
+** Check that `*.asc` signatures are present.
+
+* If your checks are ok, you can **close** the staging repository and move on.
+
+=== Deploy Source and Distributions to dist/dev
+
+Next, we need to move the distribution bundles (source + zip + tar.gz) to https://dist.apache.org/repos/dist/dev/tomee/
+
+To do so, open the `tomee-release-tools`, which you have build in an earlier step.
+
+Run
+
+[source,bash]
+----
+./target/release dist maven-to-dev --dry-run --maven-repo=https://repository.apache.org/content/repositories/orgapachetomee-xxxx/ VERSION
+----
+
+and replace `xxxx` with the staging repository and `VERSION` with the actual version to perform the release.
+
+This will download the required distribution bundles from the staging repository and generate SHA256 / SHA512 hashes.
+
+Check that the files were correctly downloaded and the created folder in `/tmp` contains everything, which is expected for the release (i.e. hashes, gpg sigs, sources, tar.gz and zip files).
+
+If everything is **ok**, remove the `--dry-run` flag and execute:
+
+[source,bash]
+----
+./target/release dist maven-to-dev --maven-repo=https://repository.apache.org/content/repositories/orgapachetomee-xxxx/ VERSION
+----
+
+This will download the required distribution bundles from the staging repository and generate SHA256 / SHA512 hashes and commit everything to https://dist.apache.org/repos/dist/dev/tomee/.
+
+*Note:* Committing the changes will take some time depending on your upload bandwidth. Ensure you have a stable connection.
+
+After the upload was successful, check that everything you would expect is available in https://dist.apache.org/repos/dist/dev/tomee/
+
+=== Push the commits and the tag
+
+Now it is time to push the generated commits *and* the tag generated during `release:prepare`.
+
+[source,bash]
+----
+git push origin <branch>
+git push origin <tagname>
+----
+
+=== Generate release notes (website)
+
+Next, you can use `tomee-release-tools` to generate the release notes for the website.
+
+[source,bash]
+----
+./target/release release-notes generate VERSION
+----
+
+Create a new branch on https://github.com/apache/tomee-site-generator/[tomee-site-generator] and add a new directory to `src/main/jbake/content/<VERSION>`.
+Copy the output of the command above to a new file `release-notes.adoc`.Write some sentences summarizing the release and thank all users / contributors, who submitted bug reports, contributed code or documentation for the given release.
+You can also get inspiration from previous release notes.
+
+In addition, prepare the download pages and move the old version to the download archive.
+
+=== Generate release notes (Jira)
+
+* Go to https://issues.apache.org/jira/browse/TOMEE[ASF Jira]
+* Navigate to https://issues.apache.org/jira/projects/TOMEE?selectedItem=com.atlassian.jira.jira-projects-plugin%3Arelease-page&status=all[Releases]
+* Create the next version, if it does not exist
+* Move all unresolved issues from the previous version to the new version (this is a bulk action)
+* Navigate to the version, which should be released, and click on **Release Notes**.
+* Verify, that the **Release Notes** only contain resolved issues.
+* Save the permalink to the release notes in Jira as we need it for the VOTE.
+
+== Calling for a vote (PMC only)
+
+* Publish a https://www.apache.org/foundation/voting.html[Vote].
+
+* Votes are generally managed and identified using keywords such as [VOTE], [CANCELLED] and [RESULT]
+
+* Include links to the staging repository, to dev/dist and to the tag created.
+
+* Include the changelog and a link to the Jira release notes
+
+* If the vote fails then discuss, fix and re-roll.
+
+== Voted Binaries (PMC only)
+
+* Once the vote has passed then release the binaries on Nexus: https://repository.apache.org/
+
+* Update both OpenEJB and TomEE JIRA versions as released (Set the release date).
+
+* Copy the binaries to the release location
+
+ From: https://dist.apache.org/repos/dist/dev/tomee/staging-[stagingId]/tomee-[version]
+ To: https://dist.apache.org/repos/dist/release/tomee/tomee-[version]
+
+* Merge the website branch and trigger a https://ci-builds.apache.org/job/Tomee/job/site-publish/[site deploy via Jenkins].
+
+== Spread the word!
+
+Announce to the world that TomEE has new bells and whistles!

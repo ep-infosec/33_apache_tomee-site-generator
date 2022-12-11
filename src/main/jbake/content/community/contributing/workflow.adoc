@@ -1,0 +1,38 @@
+= Contribution Workflow
+:jbake-date: 2018-12-08
+:jbake-type: page
+:jbake-status: published
+
+:numbered:
+
+
+
+== JIRA ticket
+- Create a ticket in link:https://issues.apache.org/jira/browse/TOMEE[Jira], if it does not already exist.
+- If the ticket is already assigned to someone else => **talk** (e.g. via the mailing list)
+- Assign the ticket to the contributor, if it is not already assigned +
+  (xref:jira-ticket.adoc[more details])
+
+== Process Task
+- Fork the repository on GitHub
+- Create a branch in your forked repository (name = JIRA ticket id)
+- Discuss on mailing list
+- Work on the code
+- Document work in JIRA ticket +
+  (xref:process-task.adoc[more details])
+
+== Submit Changes
+- Ensure code compiles
+- Ensure tests passes
+- Create PR (pull request)
+- Ask for review on mailing list +
+  (xref:submit-changes.adoc[more details])
+
+== Merge Changes (done by a committer)
+- Review changes
+- Merge code
+- Change JIRA ticket status / close ticket
+
+== Cleanup
+- Wait until PR is merged (ticket status change)
+- Remove branch in own repository
